@@ -117,7 +117,12 @@ def cell_paths_generator(target_cell_list):
             cell2_col = cell2[1]
 
             path = bresenham_line(cell1_row, cell1_col, cell2_row, cell2_col)  # intermediate cell path
-            cell_paths = np.append(cell_paths, np.array([path], dtype=cell_paths.dtype))
+            # cell_paths = np.append(cell_paths, np.array([path[:]], dtype=cell_paths.dtype))
+
+            if idx == (list_length - 2):
+                cell_paths = np.append(cell_paths, np.array([path], dtype=cell_paths.dtype))
+            else:  # removes duplicate cells that occur as repeated appended target cell by ignoring last cell
+                cell_paths = np.append(cell_paths, np.array([path[:-1]], dtype=cell_paths.dtype))
     return cell_paths
 
 
@@ -141,6 +146,7 @@ def get_visuals(target_cell_list, n):
 
 
 def get_path_directions(target_cell_list):
+    """returns the cardinal/intercardinal directions used to navigate the cells path"""
     path_cells = cell_paths_generator(target_cell_list)
     from Navigation_For_Matrix import navigation_directions
     directions = navigation_directions(path_cells)
@@ -149,9 +155,13 @@ def get_path_directions(target_cell_list):
 
 
 def get_visuals_and_directions(target_cell_list, n):
+    """get mat plots and display cell paths and directions"""
     get_visuals(target_cell_list, n)
-    directions = get_path_directions(target_cell_list)
-    return directions
+    cell_path = cell_paths_generator(target_cell_list)
+    print('num of cells for path: ', len(cell_path))
+    print(cell_path)
+    print(get_path_directions(target_cell_list))
+    return 0
 
 
 # MAT SIZE
@@ -161,8 +171,14 @@ N_SIZE = 30
 # test target cells
 cells_arr = np.array([(2, 0), (25, 5), (25, 10), (7, 23), (19, 29)], dtype=[('x', int), ('y', int)])
 
+# cell paths generator
+# print(cell_paths_generator(cells_arr))
+# print(len(cell_paths_generator(cells_arr)))
+
+## FIX REPEATS IN THE PATH CELLS, TARGET NODES ARE DOUBLED IN PATH AND AFFECTING DIRECTIONS
+
 # get figures
-print(get_visuals_and_directions(cells_arr, N_SIZE))
+get_visuals_and_directions(cells_arr, N_SIZE)
 
 # # get cell paths
 # # paths = cell_paths_generator(cells_arr)
