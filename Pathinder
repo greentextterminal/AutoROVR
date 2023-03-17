@@ -6,6 +6,8 @@ np.set_printoptions(threshold=np.inf, linewidth=10000)  # fully prints matrix; f
 
 
 # USE NUMPY LISTS FOR STORING DATA SINCE THEY ARE MORE COMPRESSED !!!
+# matrix map needs to be double the distance from the furthest distance between two cells in a path
+# start node needs to be centered in the map so that the cells are inside the matrix "map"
 
 
 def mile_to_meters(miles):
@@ -93,7 +95,8 @@ def target_cells_populater(target_cell_list, mat):
         elif idx == (list_length - 1):
             mat[row][col] = 2
         else:
-            mat[row][col] = 3            
+            mat[row][col] = 3
+
     return mat
 
 
@@ -121,6 +124,7 @@ def cell_paths_generator(target_cell_list):
                 cell_paths = np.append(cell_paths, np.array([path], dtype=cell_paths.dtype))
             else:  # removes duplicate cells that occur as repeated appended target cell by ignoring last cell
                 cell_paths = np.append(cell_paths, np.array([path[:-1]], dtype=cell_paths.dtype))
+
     return cell_paths
 
 
@@ -132,6 +136,7 @@ def cell_paths_overlay(target_cell_list, mat):
         row = cell[0]
         col = cell[1]
         mat[row][col] = 4
+
     return mat
 
 
@@ -140,6 +145,7 @@ def get_path_directions(target_cell_list):
     path_cells = cell_paths_generator(target_cell_list)
     from Navigation_For_Matrix import navigation_directions  # local import to get nav func
     directions = navigation_directions(path_cells)
+
     return directions
 
 
@@ -148,6 +154,7 @@ def get_visuals(target_cell_list, n):
     mat = matrix_generator(n)  # create a template matrix to be used for
     visualizer(target_cells_populater(target_cell_list, mat), n)  # mat plot of target cells
     visualizer(cell_paths_overlay(cell_paths_generator(target_cell_list), mat), n)  # mat plot of all target cell paths
+
     return 0
 
 
@@ -165,6 +172,7 @@ def get_visuals_and_directions(target_cell_list, n):
 
     # show plots
     get_visuals(target_cell_list, n)
+
     return 0
 
 
