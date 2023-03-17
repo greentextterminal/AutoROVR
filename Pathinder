@@ -83,7 +83,7 @@ def target_cells_populater(target_cell_list, mat):
     and returns target cell populated matrix"""
     # 0 is a free cell, 1 is start, 2 is end, 3 is intermediary node, 4 is path cell
     # calling matrix generator
-    #mat = matrix_generator(N)
+    # mat = matrix_generator(N)
     list_length = len(target_cell_list)
 
     for idx, cell in enumerate(target_cell_list):
@@ -123,7 +123,7 @@ def cell_paths_generator(target_cell_list):
 
 def cell_paths_overlay(target_cell_list, mat):
     """Returns matrix populated with cell paths"""
-    #mat = matrix_generator(N)
+    # mat = matrix_generator(N)
     cell_paths = cell_paths_generator(target_cell_list)
     for cell in cell_paths:
         row = cell[0]
@@ -139,6 +139,21 @@ def get_visuals(target_cell_list, n):
     visualizer(cell_paths_overlay(cell_paths_generator(target_cell_list), mat), n)  # mat plot of all target cell paths
     return 0
 
+
+def get_path_directions(target_cell_list):
+    path_cells = cell_paths_generator(target_cell_list)
+    from Navigation_For_Matrix import navigation_directions
+    directions = navigation_directions(path_cells)
+    print('num of directions: ', len(directions))
+    return directions
+
+
+def get_visuals_and_directions(target_cell_list, n):
+    get_visuals(target_cell_list, n)
+    directions = get_path_directions(target_cell_list)
+    return directions
+
+
 # MAT SIZE
 N_SIZE = 30
 
@@ -147,7 +162,7 @@ N_SIZE = 30
 cells_arr = np.array([(2, 0), (25, 5), (25, 10), (7, 23), (19, 29)], dtype=[('x', int), ('y', int)])
 
 # get figures
-get_visuals(cells_arr, N_SIZE)
+print(get_visuals_and_directions(cells_arr, N_SIZE))
 
 # # get cell paths
 # # paths = cell_paths_generator(cells_arr)
@@ -159,7 +174,6 @@ get_visuals(cells_arr, N_SIZE)
 # # print matrix with target cell paths
 # pathmat = cell_paths_overlay(cells_arr, N_SIZE)
 # visualizer(pathmat, N_SIZE)
-
 
 
 ###### INITIAL PARTIAL TESTING STARTS HERE #######
