@@ -5,7 +5,9 @@ import matplotlib.pyplot as plt
 np.set_printoptions(threshold=np.inf, linewidth=10000)  # fully prints matrix; full width
 
 
-# mile to meter conversion
+# USE NUMPY LISTS FOR STORING DATA SINCE THEY ARE MORE COMPRESSED !!!
+
+
 def mile_to_meters(miles):
     """convert miles to meters"""
     return miles * 1609.34
@@ -17,7 +19,7 @@ def nearest_meter(meters):
 
 
 def bresenham_line(start_x, start_y, end_x, end_y):
-    """Creates line trace from cells connecting a start and an end"""
+    """creates line trace from cells connecting a start and an end and returns cell array that make the line"""
     dx = abs(end_x - start_x)
     dy = abs(end_y - start_y)
     if start_x < end_x:
@@ -51,7 +53,6 @@ def bresenham_line(start_x, start_y, end_x, end_y):
 # visualize map and nodes
 def visualizer(matrix, max_val):
     """creates and shows a colored NxN trial matrix populated with obstacles"""
-    # USE NUMPY LISTS FOR STORING DATA SINCE THEY ARE MORE COMPRESSED !!!
     # 0 for free cell, 1 for start, 2 for end, 3 for path
     plt.rcParams["figure.figsize"] = [7.50, 3.50]
     plt.rcParams["figure.autolayout"] = True
@@ -73,7 +74,7 @@ def visualizer(matrix, max_val):
 
 
 def matrix_generator(n):
-    """Generates an NxN matrix"""
+    """returns an NxN matrix"""
     initialized_zero_matrix = np.zeros((n, n), dtype=int)
     return initialized_zero_matrix
 
@@ -82,8 +83,6 @@ def target_cells_populater(target_cell_list, mat):
     """populates a matrix with target path trace nodes, including start, end, and intermediary nodes
     and returns target cell populated matrix"""
     # 0 is a free cell, 1 is start, 2 is end, 3 is intermediary node, 4 is path cell
-    # calling matrix generator
-    # mat = matrix_generator(N)
     list_length = len(target_cell_list)
 
     for idx, cell in enumerate(target_cell_list):
@@ -94,12 +93,12 @@ def target_cells_populater(target_cell_list, mat):
         elif idx == (list_length - 1):
             mat[row][col] = 2
         else:
-            mat[row][col] = 3
+            mat[row][col] = 3            
     return mat
 
 
 def cell_paths_generator(target_cell_list):
-    """Returns combined cell paths used to connect all target cells from start to end"""
+    """returns combined cell paths used to connect all target cells from start to end"""
     list_length = len(target_cell_list)
     cell_paths = np.empty((0,), dtype=[('x', int), ('y', int)])  # store all cells used in path creation
 
@@ -110,16 +109,15 @@ def cell_paths_generator(target_cell_list):
             cell1 = target_cell_list[idx]
             cell2 = target_cell_list[idx + 1]
 
-            cell1_row = cell1[0]
-            cell1_col = cell1[1]
+            cell1_row = cell1[0]  # get cell1 row
+            cell1_col = cell1[1]  # get cell1 col
 
-            cell2_row = cell2[0]
-            cell2_col = cell2[1]
+            cell2_row = cell2[0]  # get cell2 row
+            cell2_col = cell2[1]  # get cell2 col
 
             path = bresenham_line(cell1_row, cell1_col, cell2_row, cell2_col)  # intermediate cell path
-            # cell_paths = np.append(cell_paths, np.array([path[:]], dtype=cell_paths.dtype))
 
-            if idx == (list_length - 2):
+            if idx == (list_length - 2):  # include complete path if last path is being generated
                 cell_paths = np.append(cell_paths, np.array([path], dtype=cell_paths.dtype))
             else:  # removes duplicate cells that occur as repeated appended target cell by ignoring last cell
                 cell_paths = np.append(cell_paths, np.array([path[:-1]], dtype=cell_paths.dtype))
@@ -127,14 +125,22 @@ def cell_paths_generator(target_cell_list):
 
 
 def cell_paths_overlay(target_cell_list, mat):
-    """Returns matrix populated with cell paths"""
-    # mat = matrix_generator(N)
+    """returns matrix populated with cell paths"""
     cell_paths = cell_paths_generator(target_cell_list)
+
     for cell in cell_paths:
         row = cell[0]
         col = cell[1]
         mat[row][col] = 4
     return mat
+
+
+def get_path_directions(target_cell_list):
+    """returns the cardinal/intercardinal directions used to navigate the cells path"""
+    path_cells = cell_paths_generator(target_cell_list)
+    from Navigation_For_Matrix import navigation_directions  # local import to get nav func
+    directions = navigation_directions(path_cells)
+    return directions
 
 
 def get_visuals(target_cell_list, n):
@@ -145,51 +151,35 @@ def get_visuals(target_cell_list, n):
     return 0
 
 
-def get_path_directions(target_cell_list):
-    """returns the cardinal/intercardinal directions used to navigate the cells path"""
-    path_cells = cell_paths_generator(target_cell_list)
-    from Navigation_For_Matrix import navigation_directions
-    directions = navigation_directions(path_cells)
-    print('num of directions: ', len(directions))
-    return directions
-
-
 def get_visuals_and_directions(target_cell_list, n):
-    """get mat plots and display cell paths and directions"""
-    get_visuals(target_cell_list, n)
+    """get mat plots and print cell paths and directions"""
+    # show the cells used for path
     cell_path = cell_paths_generator(target_cell_list)
-    print('num of cells for path: ', len(cell_path))
-    print(cell_path)
-    print(get_path_directions(target_cell_list))
+    print('num of cells for path: ', len(cell_path), '\n')
+    print(cell_path, '\n')
+
+    # show the directions being used to traverse path
+    directions = get_path_directions(target_cell_list)
+    print('num of directions: ', len(directions), '\n')
+    print(directions, '\n')
+
+    # show plots
+    get_visuals(target_cell_list, n)
     return 0
 
 
 # MAT SIZE
 N_SIZE = 30
 
-# generating nodes for target cell populater
-# test target cells
-cells_arr = np.array([(2, 0), (25, 5), (25, 10), (7, 23), (19, 29)], dtype=[('x', int), ('y', int)])
+# test array of targets cells
+test_cells_arr = np.array([(2, 0), (25, 5), (25, 10), (7, 23), (19, 29)], dtype=[('x', int), ('y', int)])
 
 # cell paths generator
 # print(cell_paths_generator(cells_arr))
 # print(len(cell_paths_generator(cells_arr)))
 
-## FIX REPEATS IN THE PATH CELLS, TARGET NODES ARE DOUBLED IN PATH AND AFFECTING DIRECTIONS
-
 # get figures
-get_visuals_and_directions(cells_arr, N_SIZE)
-
-# # get cell paths
-# # paths = cell_paths_generator(cells_arr)
-# # print(paths)
-#
-# # target cell populated matrix
-# visualizer(target_cells_populater(cells_arr, N_SIZE), N_SIZE)
-#
-# # print matrix with target cell paths
-# pathmat = cell_paths_overlay(cells_arr, N_SIZE)
-# visualizer(pathmat, N_SIZE)
+get_visuals_and_directions(test_cells_arr, N_SIZE)
 
 
 ###### INITIAL PARTIAL TESTING STARTS HERE #######
