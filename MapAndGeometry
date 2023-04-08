@@ -26,7 +26,7 @@ ox.config(log_console=True, use_cache=True)
 # # centroid is Lot 15 30.61769691944788, -96.33631384989796
 # centroid_lat, centroid_lon = 30.61769691944788, -96.33631384989796
 
-#ENGINEERING ACTIVITIES BUILDING A
+# ENGINEERING ACTIVITIES BUILDING A
 centroid_lat, centroid_lon = 30.61588, -96.33713
 
 centroid_lat_adjustment = 0.002
@@ -45,10 +45,9 @@ lon_adjustment = 0.002
 lon_max -= lon_adjustment  # move left by making more negative
 lon_min += lon_adjustment  # move right by making less negative
 
-
 n, s, e, w = lat_max, lat_min, lon_max, lon_min
 bbox = [n, s, e, w]
-#bbox = [38.7969489, 38.6919296, -9.088, -9.2296891] # test data
+# bbox = [38.7969489, 38.6919296, -9.088, -9.2296891] # test data
 
 
 # QUERY GRAPH ########################################################################
@@ -56,13 +55,11 @@ bbox = [n, s, e, w]
 graph = ox.graph_from_bbox(*bbox,
                            network_type='walk',
                            retain_all=True,
-                           simplify=False)
-
+                           simplify=True)
 
 # PROJECT GRAPH AND GET GDFS EDGES ###################################################
 graph_projection = ox.project_graph(graph, to_crs='crs')  # project crs coordinates of nodes/edges on graph map
 edges = ox.graph_to_gdfs(graph_projection, nodes=False)  # get connections; edges are the node connections
-
 
 # FIND GEOMETRIES #####################################################################
 """Find grass and parks"""
@@ -70,9 +67,17 @@ edges = ox.graph_to_gdfs(graph_projection, nodes=False)  # get connections; edge
 tags1 = {'leisure': 'park', 'landuse': 'grass'}  # Key val pairs for parks and grass
 green_area = ox.geometries_from_bbox(*bbox, tags1)  # gets park/grass nodes
 
-# """Find parking lots"""
-tags2 = {'parking': 'surface'}
+"""Find parking lots"""
+tags2 = {'parking': True, 'parking': 'surface'}
 parking_area = ox.geometries_from_bbox(*bbox, tags2)  # get parking lot nodes
+
+"""Find bodies of water"""
+tags3 = {'natural': 'water'}
+water_area = ox.geometries_from_bbox(*bbox, tags3)  # get water nodes
+
+"""Find buildings (footprints)"""
+tags4 = {'building': True}
+building_area = ox.geometries_from_bbox(*bbox, tags4)
 
 # """Find footpaths""" MAYBE REDUNDANT
 # tags3 = {'highway': 'footway'}
@@ -82,19 +87,75 @@ parking_area = ox.geometries_from_bbox(*bbox, tags2)  # get parking lot nodes
 # INPUTTING COORDINATES ###############################################################
 """Input start and target destination"""
 # current position of rover = start location, and user inputs target destination
+# need to convert location points to geodataframes to be used for spatial operations
 # Zach Lat / Long (START)
 zach_lat, zach_lon = 30.621289494918237, -96.34037747550609
+zach_point = (zach_lon, zach_lat)
 # Kyle Field Lat / Long (END)
 kyle_lat, kyle_lon = 30.61034118687136, -96.34009337550648
+kyle_point = (kyle_lon, kyle_lat)
+
+# create a column with a geometry label to store the location via a Point class object (representing lat,lon)
+current_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
+current_location.at[0, 'geometry'] = Point(zach_point)  # x,y : lon, lat
+
+target_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
+target_location.at[0, 'geometry'] = Point(kyle_point)
+
+
+# NODE COLLECTION # INPUTTING COORDINATES #############################################
+"""Collecting all legal nodes for creation of node pool from which we path find"""
+# combine graph nodes, green area nodes, and parking lot nodes
+graph_nodes = ox.graph_to_gdfs(graph_projection, edges=False)  # get graph (walkway) nodes
+
+CRS = edges.crs  # get crs of the edges
+
+# Reproject the nodes on interest using the same crs (coordinate reference system)
+graph_nodes.to_crs(CRS)
+green_area.to_crs(CRS)
+parking_area.to_crs(CRS)
+
+# Sanity Check : find num of nodes in each node GeoDataFrame
+graph_num_nodes = len(graph_nodes.geometry)
+green_num_nodes = len(green_area.geometry)
+parking_num_nodes = len(parking_area.geometry)
+
+# Coordinates of different node containers
+graph_nodes_coords = [coord for geom in graph_nodes.geometry for coord in list(geom.coords)]
+#green_nodes_coords = [coord for geom in green_area.geometry for coord in list(geom.coords)] # polygon obj needs further parsing
+#parking_nodes_coords = [coord for geom in parking_area.geometry for coord in list(geom.coords)]  # polygon obj needs further parsing
+
+g1 = green_area.geometry
+
+# print('printing nodes', graph_nodes_coords)
+
+# merging the GeoDataFrames of interest to get all nodes
+merged_nodes = pd.concat([graph_nodes, green_area, parking_area])
+# merged_nodes_coords = [coord for geom in merged_nodes.geometry for coord in list(geom.coords)]
+# Sanity Check : make sure the merged nodes num equals the sum of their parts
+merged_num_nodes = len(merged_nodes.geometry)
+#
+#
+# PLOT THE COMBINED NODES
+"""Map of all the nodes representing legal areas for traversal"""
+plt.style.use('seaborn')
+fig_nodes, ax_nodes = plt.subplots(figsize=(11, 11))
+merged_nodes.plot(ax=ax_nodes, color='gray', linewidth=0.01, zorder=0)
+#g1.plot(ax=ax_nodes, color='gray', linewidth=0.01, zorder=0)
+#plt.show()
 
 
 
 # PLOTTING ############################################################################
 # areas deemed legal for traversal
+###################################################################  FOR MAP INIT
 """Get plot of walkable pathways, green areas, and parking lots"""
 plt.style.use('seaborn')
 fig, ax = plt.subplots(figsize=(11, 11))
-green_area.plot(ax=ax, color='green', zorder=0)
-parking_area.plot(ax=ax, color='#4C4E52', zorder=1)
-edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=2)
+#green_area.plot(ax=ax, color='green', alpha=0.5, zorder=0)
+water_area.plot(ax=ax, color='blue', zorder=1)
+#building_area.plot(ax=ax, color='tan', zorder=2)
+parking_area.plot(ax=ax, color='#4C4E52', zorder=3)
+edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=4)
 plt.show()
+###################################################################  FOR MAP INIT
