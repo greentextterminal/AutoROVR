@@ -32,7 +32,7 @@ centroid_lat, centroid_lon = 30.61588, -96.33713
 centroid_lat_adjustment = 0.002
 centroid_lat += centroid_lat_adjustment
 
-centroid_lon_adjustment = 0.0025
+centroid_lon_adjustment = 0.003
 centroid_lon += centroid_lon_adjustment
 
 adjustment = 0.01  # degrees which correspond to km
@@ -121,7 +121,7 @@ green_num_nodes = len(green_area.geometry)
 parking_num_nodes = len(parking_area.geometry)
 
 # Coordinates of different node containers
-graph_nodes_coords = [coord for geom in graph_nodes.geometry for coord in list(geom.coords)]
+graph_nodes_coords = [coord for geom in graph_nodes.geometry for coord in list(geom.coords)]  # SUCCESS ; gets nodes
 #green_nodes_coords = [coord for geom in green_area.geometry for coord in list(geom.coords)] # polygon obj needs further parsing
 #parking_nodes_coords = [coord for geom in parking_area.geometry for coord in list(geom.coords)]  # polygon obj needs further parsing
 
@@ -140,7 +140,7 @@ merged_num_nodes = len(merged_nodes.geometry)
 """Map of all the nodes representing legal areas for traversal"""
 plt.style.use('seaborn')
 fig_nodes, ax_nodes = plt.subplots(figsize=(11, 11))
-merged_nodes.plot(ax=ax_nodes, color='gray', linewidth=0.01, zorder=0)
+merged_nodes.plot(ax=ax_nodes, color='gray', markersize=5, zorder=0)
 #g1.plot(ax=ax_nodes, color='gray', linewidth=0.01, zorder=0)
 #plt.show()
 
@@ -152,10 +152,11 @@ merged_nodes.plot(ax=ax_nodes, color='gray', linewidth=0.01, zorder=0)
 """Get plot of walkable pathways, green areas, and parking lots"""
 plt.style.use('seaborn')
 fig, ax = plt.subplots(figsize=(11, 11))
-#green_area.plot(ax=ax, color='green', alpha=0.5, zorder=0)
+green_area.plot(ax=ax, color='green', alpha=0.5, zorder=0)
 water_area.plot(ax=ax, color='blue', zorder=1)
-#building_area.plot(ax=ax, color='tan', zorder=2)
+building_area.plot(ax=ax, color='tan', zorder=2)
 parking_area.plot(ax=ax, color='#4C4E52', zorder=3)
 edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=4)
 plt.show()
 ###################################################################  FOR MAP INIT
+
