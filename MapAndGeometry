@@ -6,12 +6,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 import math
 import numpy as np
-from shapely.geometry import LineString, Point
+import itertools  # added
+from shapely.geometry import LineString, Point, Polygon
 
 # import overpass  # maybe
 # import folium # maybe
-
-ox.config(log_console=True, use_cache=True)
 
 # COORDINATES
 # # Zach Lat / Long (START)
@@ -21,142 +20,170 @@ ox.config(log_console=True, use_cache=True)
 # #n, w, s, e = zach_lat, zach_lon, kyle_lat, kyle_lon
 # bbox = [n, s, e, w]
 
+ox.config(log_console=True, use_cache=True)
+
+
+def generate_points_within_polygon(polygon, node_density):
+    # calculate the area of the polygon in square meters
+    area_m = ox.projection.project_geometry(polygon).area
+
+    # calculate the number of points to generate based on the desired node density
+    n_points = int(area_m * node_density)
+
+    # generate random points within the polygon
+    points = []
+    while len(points) < n_points:
+        # generate a random point within the bounding box of the polygon
+        x = (polygon.bounds[0] + polygon.bounds[2]) / 2.0 + ox.utils.great_circle_distance(polygon.bounds[1],
+             polygon.bounds[3]) * (np.random.random() - 0.5)
+        y = (polygon.bounds[1] + polygon.bounds[3]) / 2.0 + ox.utils.great_circle_distance(polygon.bounds[0],
+             polygon.bounds[2]) * (np.random.random() - 0.5)
+        point = Point(x, y)
+        # add the point to the list if it falls within the polygon
+        if polygon.contains(point):
+            points.append(point)
+
+    # convert the points to a list of (lat, lon) tuples
+    nodes = [(p.y, p.x) for p in points]
+
+    return nodes
+
+
 # CREATE MAP BOUNDARY ENVELOPING KNOWN TEST AREAS #########################################
 # use a centroid between test areas and create all encompassing map from that
-# # centroid is Lot 15 30.61769691944788, -96.33631384989796
-# centroid_lat, centroid_lon = 30.61769691944788, -96.33631384989796
-
 # ENGINEERING ACTIVITIES BUILDING A
-centroid_lat, centroid_lon = 30.61588, -96.33713
+def bbox_generator():
+    """Return map coord bounds"""
+    centroid_lat, centroid_lon = 30.61588, -96.33713
 
-centroid_lat_adjustment = 0.002
-centroid_lat += centroid_lat_adjustment
+    centroid_lat_adjustment = 0.002
+    centroid_lat += centroid_lat_adjustment
 
-centroid_lon_adjustment = 0.003
-centroid_lon += centroid_lon_adjustment
+    centroid_lon_adjustment = 0.003
+    centroid_lon += centroid_lon_adjustment
 
-adjustment = 0.01  # degrees which correspond to km
-lat_max = centroid_lat + adjustment  # N
-lat_min = centroid_lat - adjustment  # S
-lon_max = centroid_lon + adjustment  # E
-lon_min = centroid_lon - adjustment  # W
+    adjustment = 0.01  # degrees which correspond to km
+    lat_max = centroid_lat + adjustment  # N
+    lat_min = centroid_lat - adjustment  # S
+    lon_max = centroid_lon + adjustment  # E
+    lon_min = centroid_lon - adjustment  # W
 
-lon_adjustment = 0.002
-lon_max -= lon_adjustment  # move left by making more negative
-lon_min += lon_adjustment  # move right by making less negative
+    lon_adjustment = 0.002
+    lon_max -= lon_adjustment  # move left by making more negative
+    lon_min += lon_adjustment  # move right by making less negative
 
-n, s, e, w = lat_max, lat_min, lon_max, lon_min
-bbox = [n, s, e, w]
-# bbox = [38.7969489, 38.6919296, -9.088, -9.2296891] # test data
-
-
-# QUERY GRAPH ########################################################################
-"""get walkable paths"""
-graph = ox.graph_from_bbox(*bbox,
-                           network_type='walk',
-                           retain_all=True,
-                           simplify=True)
-
-# PROJECT GRAPH AND GET GDFS EDGES ###################################################
-graph_projection = ox.project_graph(graph, to_crs='crs')  # project crs coordinates of nodes/edges on graph map
-edges = ox.graph_to_gdfs(graph_projection, nodes=False)  # get connections; edges are the node connections
-
-# FIND GEOMETRIES #####################################################################
-"""Find grass and parks"""
-# maybe filter
-tags1 = {'leisure': 'park', 'landuse': 'grass'}  # Key val pairs for parks and grass
-green_area = ox.geometries_from_bbox(*bbox, tags1)  # gets park/grass nodes
-
-"""Find parking lots"""
-tags2 = {'parking': True, 'parking': 'surface'}
-parking_area = ox.geometries_from_bbox(*bbox, tags2)  # get parking lot nodes
-
-"""Find bodies of water"""
-tags3 = {'natural': 'water'}
-water_area = ox.geometries_from_bbox(*bbox, tags3)  # get water nodes
-
-"""Find buildings (footprints)"""
-tags4 = {'building': True}
-building_area = ox.geometries_from_bbox(*bbox, tags4)
-
-# """Find footpaths""" MAYBE REDUNDANT
-# tags3 = {'highway': 'footway'}
-# footway_area = ox.geometries_from_bbox(*bbox, tags3)
+    n, s, e, w = lat_max, lat_min, lon_max, lon_min
+    bbox = [n, s, e, w]
+    return bbox
 
 
-# INPUTTING COORDINATES ###############################################################
-"""Input start and target destination"""
-# current position of rover = start location, and user inputs target destination
-# need to convert location points to geodataframes to be used for spatial operations
-# Zach Lat / Long (START)
-zach_lat, zach_lon = 30.621289494918237, -96.34037747550609
-zach_point = (zach_lon, zach_lat)
-# Kyle Field Lat / Long (END)
-kyle_lat, kyle_lon = 30.61034118687136, -96.34009337550648
-kyle_point = (kyle_lon, kyle_lat)
+def coordinate_input_and_point_conversion(in_lat, in_lon, out_lat, out_lon):
+    # INPUTTING COORDINATES ###############################################################
+    """Input start and target destination and return a list of Point converted GeoDataFrame"""
+    # current position of rover = start location, and user inputs target destination
+    # need to convert location points to geodataframes to be used for spatial operations
+    # Zach Lat / Long (START)
+    zach_lat, zach_lon = 30.621289494918237, -96.34037747550609
+    zach_point = (zach_lon, zach_lat)
+    # Kyle Field Lat / Long (END)
+    kyle_lat, kyle_lon = 30.61034118687136, -96.34009337550648
+    kyle_point = (kyle_lon, kyle_lat)
 
-# create a column with a geometry label to store the location via a Point class object (representing lat,lon)
-current_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
-current_location.at[0, 'geometry'] = Point(zach_point)  # x,y : lon, lat
+    in_point = (in_lon, in_lat)
+    out_point = (out_lon, out_lat)
 
-target_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
-target_location.at[0, 'geometry'] = Point(kyle_point)
+    # create a column with a geometry label to store the location via a Point class object (representing lat,lon)
+    current_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
+    current_location.at[0, 'geometry'] = Point(in_point)  # x,y : lon, lat
 
+    target_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
+    target_location.at[0, 'geometry'] = Point(out_point)
 
-# NODE COLLECTION # INPUTTING COORDINATES #############################################
-"""Collecting all legal nodes for creation of node pool from which we path find"""
-# combine graph nodes, green area nodes, and parking lot nodes
-graph_nodes = ox.graph_to_gdfs(graph_projection, edges=False)  # get graph (walkway) nodes
-
-CRS = edges.crs  # get crs of the edges
-
-# Reproject the nodes on interest using the same crs (coordinate reference system)
-graph_nodes.to_crs(CRS)
-green_area.to_crs(CRS)
-parking_area.to_crs(CRS)
-
-# Sanity Check : find num of nodes in each node GeoDataFrame
-graph_num_nodes = len(graph_nodes.geometry)
-green_num_nodes = len(green_area.geometry)
-parking_num_nodes = len(parking_area.geometry)
-
-# Coordinates of different node containers
-graph_nodes_coords = [coord for geom in graph_nodes.geometry for coord in list(geom.coords)]  # SUCCESS ; gets nodes
-#green_nodes_coords = [coord for geom in green_area.geometry for coord in list(geom.coords)] # polygon obj needs further parsing
-#parking_nodes_coords = [coord for geom in parking_area.geometry for coord in list(geom.coords)]  # polygon obj needs further parsing
-
-g1 = green_area.geometry
-
-# print('printing nodes', graph_nodes_coords)
-
-# merging the GeoDataFrames of interest to get all nodes
-merged_nodes = pd.concat([graph_nodes, green_area, parking_area])
-# merged_nodes_coords = [coord for geom in merged_nodes.geometry for coord in list(geom.coords)]
-# Sanity Check : make sure the merged nodes num equals the sum of their parts
-merged_num_nodes = len(merged_nodes.geometry)
-#
-#
-# PLOT THE COMBINED NODES
-"""Map of all the nodes representing legal areas for traversal"""
-plt.style.use('seaborn')
-fig_nodes, ax_nodes = plt.subplots(figsize=(11, 11))
-merged_nodes.plot(ax=ax_nodes, color='gray', markersize=5, zorder=0)
-#g1.plot(ax=ax_nodes, color='gray', linewidth=0.01, zorder=0)
-#plt.show()
+    converted_points = [current_location, target_location]
+    return converted_points
 
 
+def initialize_map_and_plot ():
+    """get graph walkable paths"""
+    bbox = bbox_generator()  # get bbox
+    # QUERY GRAPH ########################################################################
+    graph = ox.graph_from_bbox(*bbox,
+                               network_type='walk',
+                               retain_all=True,
+                               simplify=True)
+    # PROJECT GRAPH AND GET GDFS EDGES ###################################################
+    graph_projection = ox.project_graph(graph, to_crs='crs')  # project crs coordinates of nodes/edges on graph map
+    edges = ox.graph_to_gdfs(graph_projection, nodes=False)  # get connections; edges are the node connections
 
-# PLOTTING ############################################################################
-# areas deemed legal for traversal
-###################################################################  FOR MAP INIT
-"""Get plot of walkable pathways, green areas, and parking lots"""
-plt.style.use('seaborn')
-fig, ax = plt.subplots(figsize=(11, 11))
-green_area.plot(ax=ax, color='green', alpha=0.5, zorder=0)
-water_area.plot(ax=ax, color='blue', zorder=1)
-building_area.plot(ax=ax, color='tan', zorder=2)
-parking_area.plot(ax=ax, color='#4C4E52', zorder=3)
-edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=4)
+    # FIND GEOMETRIES #####################################################################
+    """Find grass/parks, parking lots, bodies of water, and buildings"""
+    # Green area GeoDataFrame
+    tags1 = {'leisure': 'park', 'landuse': 'grass'}  # Key val pairs for parks and grass
+    green_area = ox.geometries_from_bbox(*bbox, tags1)  # gets park/grass nodes
+
+    # Parking/Parking Lot area GeoDataFrame
+    tags2 = {'parking': True, 'parking': 'surface'}
+    parking_area = ox.geometries_from_bbox(*bbox, tags2)  # get parking lot nodes
+
+    # Water area GeoDataFrame
+    tags3 = {'natural': 'water'}
+    water_area = ox.geometries_from_bbox(*bbox, tags3)  # get water nodes
+
+    # Building area GeoDataFrame
+    tags4 = {'building': True}
+    building_area = ox.geometries_from_bbox(*bbox, tags4)
+
+    # INPUTTING COORDINATES ###############################################################
+    """Input start and target destination"""
+    # current position of rover = start location, and user inputs target destination
+    # need to convert location points to geodataframes to be used for spatial operations
+    # Zach Lat / Long (START)
+    zach_lat, zach_lon = 30.621289494918237, -96.34037747550609
+    zach_point = (zach_lon, zach_lat)
+    # Kyle Field Lat / Long (END)
+    kyle_lat, kyle_lon = 30.61034118687136, -96.34009337550648
+    kyle_point = (kyle_lon, kyle_lat)
+    conv_points = coordinate_input_and_point_conversion(zach_lat, zach_lon, kyle_lat, kyle_lon)
+    # assign conv points to current and target location from returned list
+    current_location = conv_points[0]  # type : gdf
+    target_location = conv_points[1]  # type : gdf
+
+    # get graph (walkway) nodes
+    graph_nodes = ox.graph_to_gdfs(graph_projection, edges=False)
+    # get CRS from graph edges
+    CRS = edges.crs  # get crs of the edges
+    # Reproject the nodes on interest using the same crs (coordinate reference system)
+    graph_nodes.to_crs(CRS)
+    green_area.to_crs(CRS)
+    parking_area.to_crs(CRS)
+    current_location.to_crs(CRS)  # origin node
+    target_location.to_crs(CRS)  # destination node
+
+    # TEST SHORTEST PATH
+    # start and target nodes are conv_points[0] and [1]
+    # get the ID's of start and target node
+    print(current_location)
+    # start_id = graph.nodes[current_location]['osmid']
+    # target_id = graph.nodes[target_location]['osmid']
+    #graph.add_node(current_location.geometry)
+
+    #path_IDs = ox.shortest_path(graph, start_id, target_id, 1, weight='length')
+    #print(path_IDs)
+
+    # PLOTTING ############################################################################
+    # areas deemed legal for traversal
+    # Get plot of walkable pathways, green areas, and parking lots
+    plt.style.use('seaborn')
+    fig, ax = plt.subplots(figsize=(11, 11))
+    green_area.plot(ax=ax, color='green', alpha=0.5, zorder=0)
+    water_area.plot(ax=ax, color='blue', zorder=1)
+    building_area.plot(ax=ax, color='tan', zorder=2)
+    parking_area.plot(ax=ax, color='#4C4E52', zorder=3)
+    edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=4)
+    current_location.plot(ax=ax, color='red', markersize=10, zorder=5)
+    target_location.plot(ax=ax, color='green', markersize=10, zorder=6)
+
+    return ax
+
+ax_general = initialize_map_and_plot()
 plt.show()
-###################################################################  FOR MAP INIT
-
