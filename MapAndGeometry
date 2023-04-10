@@ -9,8 +9,6 @@ import numpy as np
 import itertools  # added
 from shapely.geometry import LineString, Point, Polygon
 
-# import overpass  # maybe
-# import folium # maybe
 
 # COORDINATES
 # # Zach Lat / Long (START)
@@ -77,7 +75,16 @@ def bbox_generator():
     return bbox
 
 
-def coordinate_input_and_point_conversion(in_lat, in_lon, out_lat, out_lon):
+def euclidian_distance(neighborID, targetID):
+    """Returns Euclidian distance between two pairs of coordinates (points)"""
+    x1 = graph_nodes.x[neighborID]
+    y1 = graph_nodes.y[neighborID]
+    x2 = graph_nodes.x[targetID]
+    y2 = graph_nodes.y[targetID]
+    return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+
+
+def coordinate_input_and_point_conversion(start_lat, start_lon, target_lat, target_lon):
     # INPUTTING COORDINATES ###############################################################
     """Input start and target destination and return a list of Point converted GeoDataFrame"""
     # current position of rover = start location, and user inputs target destination
@@ -89,21 +96,36 @@ def coordinate_input_and_point_conversion(in_lat, in_lon, out_lat, out_lon):
     kyle_lat, kyle_lon = 30.61034118687136, -96.34009337550648
     kyle_point = (kyle_lon, kyle_lat)
 
-    in_point = (in_lon, in_lat)
-    out_point = (out_lon, out_lat)
+    start_point = (start_lon, start_lat)
+    target_point = (target_lon, target_lat)
 
     # create a column with a geometry label to store the location via a Point class object (representing lat,lon)
-    current_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
-    current_location.at[0, 'geometry'] = Point(in_point)  # x,y : lon, lat
+    current_location = gpd.GeoDataFrame(columns=['y', 'x', 'street_count', 'lon', 'lat', 'highway', 'geometry'],
+                                        crs='EPSG:4326', geometry='geometry')
+    current_location.at[0, 'y'] = start_lat
+    current_location.at[0, 'x'] = start_lon
+    current_location.at[0, 'street_count'] = 0  # temp
+    current_location.at[0, 'lon'] = start_lon
+    current_location.at[0, 'lat'] = start_lat
+    current_location.at[0, 'highway'] = 'nan'
+    current_location.at[0, 'geometry'] = Point(start_point)  # x,y : lon, lat
 
-    target_location = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326', geometry='geometry')
-    target_location.at[0, 'geometry'] = Point(out_point)
+    target_location = gpd.GeoDataFrame(columns=['y', 'x', 'street_count', 'lon', 'lat', 'highway','geometry'],
+                                        crs='EPSG:4326', geometry='geometry')
+    target_location.at[1, 'y'] = target_lat
+    target_location.at[1, 'x'] = target_lon
+    target_location.at[1, 'street_count'] = 0  # temp
+    target_location.at[1, 'lon'] = target_lon
+    target_location.at[1, 'lat'] = target_lat
+    target_location.at[1, 'highway'] = 'nan'
+    target_location.at[1, 'geometry'] = Point(target_point)  # x,y : lon, lat
 
-    converted_points = [current_location, target_location]
-    return converted_points
+    converted_point_gdf = [current_location, target_location]
+    return converted_point_gdf
 
 
-def initialize_map_and_plot ():
+def initialize_map_and_plot():
+    global graph_nodes  # make available for A* Heuristic
     """get graph walkable paths"""
     bbox = bbox_generator()  # get bbox
     # QUERY GRAPH ########################################################################
@@ -159,16 +181,83 @@ def initialize_map_and_plot ():
     current_location.to_crs(CRS)  # origin node
     target_location.to_crs(CRS)  # destination node
 
-    # TEST SHORTEST PATH
+    # COMBINED GDF
+    #combined_gdf =
+
+    # TEST SHORTEST PATH #############################################################
     # start and target nodes are conv_points[0] and [1]
     # get the ID's of start and target node
     print(current_location)
     # start_id = graph.nodes[current_location]['osmid']
     # target_id = graph.nodes[target_location]['osmid']
-    #graph.add_node(current_location.geometry)
 
-    #path_IDs = ox.shortest_path(graph, start_id, target_id, 1, weight='length')
-    #print(path_IDs)
+    #graph.add_node(current_location.geometry)
+    # add nodes to the MultiDiGraph
+    # Store all nodes from the graph area without the edge nodes
+
+    # route nodes stored in GeoDatFrame
+    route_nodes = gpd.GeoDataFrame()
+
+    # the for loops iterate over the origin and destinations
+    for current_idx, current in current_location.iterrows():
+        # print('current_idx: ', current_idx, 'current: ', current)
+        # find closest node ID to location node
+        nearest_start_node = ox.nearest_nodes(G=graph_projection, X=current.geometry.x, Y=current.geometry.y)
+        # Extract coordinate info from destination node
+        for target_idx, target in target_location.iterrows():
+            # print('target_idx: ', target_idx, 'target: ', target)
+            # find closest node ID from target node
+            nearest_target_node = ox.nearest_nodes(G=graph_projection, X=target.geometry.x, Y=target.geometry.y)
+
+            # print(current['x'])
+            # print(nearest_start_node)
+            # print(graph_nodes.geometry[nearest_start_node])
+
+            # print('x1', graph_nodes.x[nearest_start_node])
+            # print('y1', graph_nodes.y[nearest_start_node])
+            #
+            # print('x2', graph_nodes.x[nearest_target_node])
+            # print('y2', graph_nodes.y[nearest_target_node])
+
+            # x1 = graph_nodes.x[nearest_start_node]
+            # y1 = graph_nodes.y[nearest_start_node]
+            # x2 = graph_nodes.x[nearest_target_node]
+            # y2 = graph_nodes.y[nearest_target_node]
+            # euc_dist = math.floor(euclidian_distance(x1, y1, x2, y2))
+
+            print(nearest_start_node)
+            print(nearest_target_node)
+
+            print(graph_nodes.x[nearest_start_node])
+
+            # euclidian_distance(nearest_start_node, nearest_target_node)
+
+            # using networkx A* algo to get shortest path
+            # shortest_path = nx.astar_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+            #                               heuristic=euclidian_distance,
+            #                               weight='cost')
+
+            # using networkx djikstra algo to get shortest path
+            shortest_path = nx.dijkstra_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+                                          weight='length')
+
+            # get only the nodes from the shortest path
+            path_nodes = graph_nodes.loc[shortest_path]
+            # reformat path nodes into LineString object
+            nodes_list = LineString(list(path_nodes.geometry.values))
+            # append LineString of path nodes into a GeoDataFrame
+            route_nodes = route_nodes.append([[nodes_list]], ignore_index=True)  # has only LineString attribute
+
+    # Due to a bug GeoDataFrame gets converted to DataFrame
+    print(route_nodes)
+    print(type(route_nodes))  # DataFrame not GeoDataFrame
+
+    # Need to convert DataFrame back to GeoDataFrame !!!
+    # Give the output nodes column the geometry name to set the geometry
+    route_nodes.columns = ['geometry']
+    # Set geometry of the nodes
+    route_nodes = route_nodes.set_geometry('geometry')
+    route_nodes.crs = graph_nodes.crs
 
     # PLOTTING ############################################################################
     # areas deemed legal for traversal
@@ -176,14 +265,17 @@ def initialize_map_and_plot ():
     plt.style.use('seaborn')
     fig, ax = plt.subplots(figsize=(11, 11))
     green_area.plot(ax=ax, color='green', alpha=0.5, zorder=0)
-    water_area.plot(ax=ax, color='blue', zorder=1)
+    water_area.plot(ax=ax, color='blue', alpha=0.5, zorder=1)
     building_area.plot(ax=ax, color='tan', zorder=2)
     parking_area.plot(ax=ax, color='#4C4E52', zorder=3)
     edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=4)
-    current_location.plot(ax=ax, color='red', markersize=10, zorder=5)
-    target_location.plot(ax=ax, color='green', markersize=10, zorder=6)
+    current_location.plot(ax=ax, color='red', markersize=15, zorder=5)
+    target_location.plot(ax=ax, color='green', markersize=15, zorder=6)
+    route_nodes.plot(ax=ax, color='red', linewidth=2, zorder=7)
 
     return ax
 
 ax_general = initialize_map_and_plot()
 plt.show()
+
+
