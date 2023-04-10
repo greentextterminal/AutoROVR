@@ -196,8 +196,9 @@ def initialize_map_and_plot():
     # Store all nodes from the graph area without the edge nodes
 
     # route nodes stored in GeoDatFrame
-    route_nodes = gpd.GeoDataFrame()
-
+    # route_nodes = gpd.GeoDataFrame() # IN USE
+    djikstra_route_nodes = gpd.GeoDataFrame()  # FOR DEMO
+    astar_route_nodes = gpd.GeoDataFrame()  # FOR DEMO
     # the for loops iterate over the origin and destinations
     for current_idx, current in current_location.iterrows():
         # print('current_idx: ', current_idx, 'current: ', current)
@@ -212,25 +213,14 @@ def initialize_map_and_plot():
             # print(current['x'])
             # print(nearest_start_node)
             # print(graph_nodes.geometry[nearest_start_node])
-
             # print('x1', graph_nodes.x[nearest_start_node])
             # print('y1', graph_nodes.y[nearest_start_node])
-            #
             # print('x2', graph_nodes.x[nearest_target_node])
             # print('y2', graph_nodes.y[nearest_target_node])
 
-            # x1 = graph_nodes.x[nearest_start_node]
-            # y1 = graph_nodes.y[nearest_start_node]
-            # x2 = graph_nodes.x[nearest_target_node]
-            # y2 = graph_nodes.y[nearest_target_node]
-            # euc_dist = math.floor(euclidian_distance(x1, y1, x2, y2))
-
             print(nearest_start_node)
             print(nearest_target_node)
-
             print(graph_nodes.x[nearest_start_node])
-
-            # euclidian_distance(nearest_start_node, nearest_target_node)
 
             # using networkx A* algo to get shortest path
             # shortest_path = nx.astar_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
@@ -238,26 +228,45 @@ def initialize_map_and_plot():
             #                               weight='cost')
 
             # using networkx djikstra algo to get shortest path
-            shortest_path = nx.dijkstra_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+            # shortest_path = nx.dijkstra_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+            #                               weight='length')
+
+
+            astar_shortest_path = nx.astar_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+                                          heuristic=euclidian_distance, weight='cost')
+
+            djikstra_shortest_path = nx.dijkstra_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
                                           weight='length')
 
             # get only the nodes from the shortest path
-            path_nodes = graph_nodes.loc[shortest_path]
+            #path_nodes = graph_nodes.loc[shortest_path]  # IN USE
+            astar_path_nodes = graph_nodes.loc[astar_shortest_path]  # FOR DEMO
+            djikstra_path_nodes = graph_nodes.loc[djikstra_shortest_path]  # FOR DEMO
             # reformat path nodes into LineString object
-            nodes_list = LineString(list(path_nodes.geometry.values))
+            #nodes_list = LineString(list(path_nodes.geometry.values))  # IN USE
+            astar_nodes_list = LineString(list(astar_path_nodes.geometry.values))  # IN DEMO
+            djikstra_nodes_list = LineString(list(djikstra_path_nodes.geometry.values))  # IN DEMO
             # append LineString of path nodes into a GeoDataFrame
-            route_nodes = route_nodes.append([[nodes_list]], ignore_index=True)  # has only LineString attribute
-
+            #route_nodes = route_nodes.append([[nodes_list]], ignore_index=True)  # has only LineString attribute IN USE!!
+            astar_route_nodes = astar_route_nodes.append([[astar_nodes_list]], ignore_index=True)  # FOR DEMO
+            djikstra_route_nodes = djikstra_route_nodes.append([[djikstra_nodes_list]], ignore_index=True)  # FOR DEMO
     # Due to a bug GeoDataFrame gets converted to DataFrame
-    print(route_nodes)
-    print(type(route_nodes))  # DataFrame not GeoDataFrame
+    # print(route_nodes)
+    # print(type(route_nodes))  # DataFrame not GeoDataFrame
 
     # Need to convert DataFrame back to GeoDataFrame !!!
     # Give the output nodes column the geometry name to set the geometry
-    route_nodes.columns = ['geometry']
+    #route_nodes.columns = ['geometry']  # IN USE
+    astar_route_nodes.columns = ['geometry']  # FOR DEMO
+    djikstra_route_nodes.columns = ['geometry']  # FOR DEMO
+
     # Set geometry of the nodes
-    route_nodes = route_nodes.set_geometry('geometry')
-    route_nodes.crs = graph_nodes.crs
+    # route_nodes = route_nodes.set_geometry('geometry')  # IN USE
+    # route_nodes.crs = graph_nodes.crs  # IN USE
+    astar_route_nodes = astar_route_nodes.set_geometry('geometry')  # IN USE
+    djikstra_route_nodes = djikstra_route_nodes.set_geometry('geometry')  # IN USE
+    astar_route_nodes.crs = graph_nodes.crs  # IN USE
+    djikstra_route_nodes.crs = graph_nodes.crs  # IN USE
 
     # PLOTTING ############################################################################
     # areas deemed legal for traversal
@@ -271,11 +280,11 @@ def initialize_map_and_plot():
     edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=4)
     current_location.plot(ax=ax, color='red', markersize=15, zorder=5)
     target_location.plot(ax=ax, color='green', markersize=15, zorder=6)
-    route_nodes.plot(ax=ax, color='red', linewidth=2, zorder=7)
-
+    # route_nodes.plot(ax=ax, color='red', linewidth=2, zorder=7)  # IN USE
+    djikstra_route_nodes.plot(ax=ax, color='red', linewidth=2, zorder=7, label='Djikstra')  # FOR DEMO
+    astar_route_nodes.plot(ax=ax, color='purple', linewidth=2, zorder=8, label='AStar')  # FOR DEMO
+    plt.legend(loc="upper left")  # FOR DEMO
     return ax
 
 ax_general = initialize_map_and_plot()
 plt.show()
-
-
