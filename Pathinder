@@ -359,7 +359,3 @@ start_point = zach_point
 target_point = lot51_point
 ax_general = initialize_map_and_plot(start_point, target_point)
 plt.show()
-
-
-
-
