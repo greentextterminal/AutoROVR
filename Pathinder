@@ -1,231 +1,365 @@
+import pandas as pd
+import geopandas as gpd
+import osmnx as ox
+import networkx as nx
+import matplotlib
+import matplotlib.pyplot as plt
 import math
 import numpy as np
-import matplotlib.pyplot as plt
+import itertools  # added
+from shapely.geometry import LineString, Point, Polygon
+from math import radians, sin, cos, sqrt, atan2
 
-np.set_printoptions(threshold=np.inf, linewidth=10000)  # fully prints matrix; full width
+# COORDINATES
+# # Zach Lat / Long (START)
+# zach_lat, zach_lon = 30.621289494918237, -96.34037747550609  # N, W
+# # Kyle Field Lat / Long (END)
+# kyle_lat, kyle_lon = 30.61034118687136, -96.34009337550648  # S, E
+# #n, w, s, e = zach_lat, zach_lon, kyle_lat, kyle_lon
+# bbox = [n, s, e, w]
 
-
-# USE NUMPY LISTS FOR STORING DATA SINCE THEY ARE MORE COMPRESSED !!!
-# matrix map needs to be double the distance from the furthest distance between two cells in a path
-# start node needs to be centered in the map so that the cells are inside the matrix "map"
-
-
-def mile_to_meters(miles):
-    """convert miles to meters"""
-    return miles * 1609.34
-
-
-def nearest_meter(meters):
-    """get nearest integer meter from float"""
-    return math.ceil(meters)
+# setup and config
+ox.config(log_console=True, use_cache=True)
 
 
-def bresenham_line(start_x, start_y, end_x, end_y):
-    """creates line trace from cells connecting a start and an end and returns cell array that make the line"""
-    dx = abs(end_x - start_x)
-    dy = abs(end_y - start_y)
-    if start_x < end_x:
-        sx = 1
-    else:
-        sx = -1
-    if start_y < end_y:
-        sy = 1
-    else:
-        sy = -1
-    error = dx - dy
-    # line_cells = []
-    line_cells = np.empty((0,), dtype=[('x', int), ('y', int)])
+def generate_points_within_polygon(polygon, node_density):
+    # calculate the area of the polygon in square meters
+    area_m = ox.projection.project_geometry(polygon).area
 
-    while True:
-        # line_cells.append((start_x, start_y))
-        line_cells = np.append(line_cells, np.array([(start_x, start_y)], dtype=line_cells.dtype))
-        if start_x == end_x and start_y == end_y:
-            break
-        doubled_error = 2 * error
-        if doubled_error > -dy:
-            error -= dy
-            start_x += sx
-        if doubled_error < dx:
-            error += dx
-            start_y += sy
+    # calculate the number of points to generate based on the desired node density
+    n_points = int(area_m * node_density)
 
-    return line_cells
+    # generate random points within the polygon
+    points = []
+    while len(points) < n_points:
+        # generate a random point within the bounding box of the polygon
+        x = (polygon.bounds[0] + polygon.bounds[2]) / 2.0 + ox.utils.great_circle_distance(polygon.bounds[1],
+             polygon.bounds[3]) * (np.random.random() - 0.5)
+        y = (polygon.bounds[1] + polygon.bounds[3]) / 2.0 + ox.utils.great_circle_distance(polygon.bounds[0],
+             polygon.bounds[2]) * (np.random.random() - 0.5)
+        point = Point(x, y)
+        # add the point to the list if it falls within the polygon
+        if polygon.contains(point):
+            points.append(point)
+
+    # convert the points to a list of (lat, lon) tuples
+    nodes = [(p.y, p.x) for p in points]
+
+    return nodes
 
 
-# visualize map and nodes
-def visualizer(matrix, max_val):
-    """creates and shows a colored NxN trial matrix populated with obstacles"""
-    # 0 for free cell, 1 for start, 2 for end, 3 for path
-    plt.rcParams["figure.figsize"] = [7.50, 3.50]
-    plt.rcParams["figure.autolayout"] = True
-
-    fig, ax = plt.subplots()
-    # ax.matshow(matrix, cmap='plasma') # prev used
-
-    # plot matrix plot with imshow
-    im = ax.imshow(matrix, cmap='plasma')
-    # setting origin in bottom left corner
-    ax.set_ylim(ax.get_ylim()[::-1])
-
-    for i in range(max_val):
-        for j in range(max_val):
-            c = matrix[j, i]
-            ax.text(i, j, str(c), va='center', ha='center')
-
-    return plt.show()
+def route_nodes_to_list(path_nodes):
+    """Converts a path nodes GeoDataFrame to a NumPy array and returns it"""
+    # get astar_route_nodes and djikstra_route_nodes
+    new_coordinate = pd.DataFrame(path_nodes[['lon', 'lat']])
+    # new_coordinate = new_coordinate[['lat', 'lon']]
+    new_index = list(range(0, len(new_coordinate)))
+    # rename the node number index
+    new_coordinate['num'] = new_index  # create a new column with indices ranging from 0 to # of nodes
+    new_coordinate = new_coordinate.set_index('num')  # create a new DataFrame object with original indices replaced
+    coordinate_arr = new_coordinate.to_numpy()  # convert DataFrame object to NumPy array
+    # print("Coordinate path array:")
+    # print(coordinate_arr)
+    return coordinate_arr
 
 
-def matrix_generator(n):
-    """returns an NxN matrix"""
-    initialized_zero_matrix = np.zeros((n, n), dtype=int)
-    return initialized_zero_matrix
+def coordinates_to_distance(coordinate_arr):
+    """Converts an array of coordinates to a total distance"""
+    distance = 0
+    R = 6371  # Radius of the Earth in kilometers
+    coordinate_length = len(coordinate_arr)
+    # print(coordinate_length)
+    for i in range(coordinate_length - 1):
+        coord1 = coordinate_arr[i]
+        coord2 = coordinate_arr[i + 1]
+        #print(coord1, " ", coord2)
+        lon1 = coord1[0]
+        lat1 = coord1[1]
+        #print("coord1: ", "lat:", lat1, "lon:", lon1)
+        lon2 = coord2[0]
+        lat2 = coord2[1]
+        #print("coord2: ", "lat:", lat2, "lon:", lon2)
+        # convert lat and lon to radians
+        lon1, lat1,  lon2, lat2 = radians(lon1), radians(lat1), radians(lon2), radians(lat2)
+        # differences in lat and lon
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        # Haversine formula
+        square_half_chord_len = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+        ang_dist = 2 * atan2(sqrt(square_half_chord_len), sqrt(1 - square_half_chord_len))
+        distance += (R * ang_dist)
+    #print("calulated distance: ", distance)
+    return distance
 
 
-def target_cells_populater(target_cell_list, mat):
-    """populates a matrix with target path trace nodes, including start, end, and intermediary nodes
-    and returns target cell populated matrix"""
-    # 0 is a free cell, 1 is start, 2 is end, 3 is intermediary node, 4 is path cell
-    list_length = len(target_cell_list)
+# CREATE MAP BOUNDARY ENVELOPING KNOWN TEST AREAS #########################################
+# use a centroid between test areas and create all encompassing map from that
+# ENGINEERING ACTIVITIES BUILDING A
+def bbox_generator():
+    """Return map coord bounds"""
+    centroid_lat, centroid_lon = 30.61588, -96.33713
 
-    for idx, cell in enumerate(target_cell_list):
-        row = cell[0]
-        col = cell[1]
-        if idx == 0:
-            mat[row][col] = 1
-        elif idx == (list_length - 1):
-            mat[row][col] = 2
-        else:
-            mat[row][col] = 3
+    centroid_lat_adjustment = 0.002
+    centroid_lat += centroid_lat_adjustment
 
-    return mat
+    centroid_lon_adjustment = 0.003
+    centroid_lon += centroid_lon_adjustment
 
+    adjustment = 0.01  # degrees which correspond to km
+    lat_max = centroid_lat + adjustment  # N
+    lat_min = centroid_lat - adjustment  # S
+    lon_max = centroid_lon + adjustment  # E
+    lon_min = centroid_lon - adjustment  # W
 
-def cell_paths_generator(target_cell_list):
-    """returns combined cell paths used to connect all target cells from start to end"""
-    list_length = len(target_cell_list)
-    cell_paths = np.empty((0,), dtype=[('x', int), ('y', int)])  # store all cells used in path creation
+    lon_adjustment = 0.002
+    lon_max -= lon_adjustment  # move left by making more negative
+    lon_min += lon_adjustment  # move right by making less negative
 
-    for idx, cell in enumerate(target_cell_list):
-        if idx == (list_length - 1):
-            break
-        else:
-            cell1 = target_cell_list[idx]
-            cell2 = target_cell_list[idx + 1]
-
-            cell1_row = cell1[0]  # get cell1 row
-            cell1_col = cell1[1]  # get cell1 col
-
-            cell2_row = cell2[0]  # get cell2 row
-            cell2_col = cell2[1]  # get cell2 col
-
-            path = bresenham_line(cell1_row, cell1_col, cell2_row, cell2_col)  # intermediate cell path
-
-            if idx == (list_length - 2):  # include complete path if last path is being generated
-                cell_paths = np.append(cell_paths, np.array([path], dtype=cell_paths.dtype))
-            else:  # removes duplicate cells that occur as repeated appended target cell by ignoring last cell
-                cell_paths = np.append(cell_paths, np.array([path[:-1]], dtype=cell_paths.dtype))
-
-    return cell_paths
+    n, s, e, w = lat_max, lat_min, lon_max, lon_min
+    bbox = [n, s, e, w]
+    return bbox
 
 
-def cell_paths_overlay(target_cell_list, mat):
-    """returns matrix populated with cell paths"""
-    cell_paths = cell_paths_generator(target_cell_list)
-
-    for cell in cell_paths:
-        row = cell[0]
-        col = cell[1]
-        mat[row][col] = 4
-
-    return mat
+def euclidian_distance(neighborID, targetID):
+    """Returns Euclidian distance between two pairs of coordinates (points)"""
+    x1 = graph_nodes.x[neighborID]
+    y1 = graph_nodes.y[neighborID]
+    x2 = graph_nodes.x[targetID]
+    y2 = graph_nodes.y[targetID]
+    return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
 
-def get_path_directions(target_cell_list):
-    """returns the cardinal/intercardinal directions used to navigate the cells path"""
-    path_cells = cell_paths_generator(target_cell_list)
-    from Navigation_For_Matrix import navigation_directions  # local import to get nav func
-    directions = navigation_directions(path_cells)
+def coordinate_input_and_point_conversion(start_lat, start_lon, target_lat, target_lon):
+    # INPUTTING COORDINATES ###############################################################
+    """Input start and target destination and return a list of Point converted GeoDataFrame"""
+    # current position of rover = start location, and user inputs target destination
+    # need to convert location points to geodataframes to be used for spatial operations
 
-    return directions
+    start_point = (start_lon, start_lat)
+    target_point = (target_lon, target_lat)
 
+    # create a column with a geometry label to store the location via a Point class object (representing lat,lon)
+    current_location = gpd.GeoDataFrame(columns=['y', 'x', 'street_count', 'lon', 'lat', 'highway', 'geometry'],
+                                        crs='EPSG:4326', geometry='geometry')
+    current_location.at[0, 'y'] = start_lat
+    current_location.at[0, 'x'] = start_lon
+    current_location.at[0, 'street_count'] = 0  # temp
+    current_location.at[0, 'lon'] = start_lon
+    current_location.at[0, 'lat'] = start_lat
+    current_location.at[0, 'highway'] = 'nan'
+    current_location.at[0, 'geometry'] = Point(start_point)  # x,y : lon, lat
 
-def get_visuals(target_cell_list, n):
-    """returns matrix plot of size NxN with target cells and cell paths based on passed target cell list"""
-    mat = matrix_generator(n)  # create a template matrix to be used for
-    visualizer(target_cells_populater(target_cell_list, mat), n)  # mat plot of target cells
-    visualizer(cell_paths_overlay(cell_paths_generator(target_cell_list), mat), n)  # mat plot of all target cell paths
+    target_location = gpd.GeoDataFrame(columns=['y', 'x', 'street_count', 'lon', 'lat', 'highway', 'geometry'],
+                                        crs='EPSG:4326', geometry='geometry')
+    target_location.at[1, 'y'] = target_lat
+    target_location.at[1, 'x'] = target_lon
+    target_location.at[1, 'street_count'] = 0  # temp
+    target_location.at[1, 'lon'] = target_lon
+    target_location.at[1, 'lat'] = target_lat
+    target_location.at[1, 'highway'] = 'nan'
+    target_location.at[1, 'geometry'] = Point(target_point)  # x,y : lon, lat
 
-    return 0
-
-
-def get_visuals_and_directions(target_cell_list, n):
-    """get mat plots and print cell paths and directions"""
-    # show the cells used for path
-    cell_path = cell_paths_generator(target_cell_list)
-    print('num of cells for path: ', len(cell_path), '\n')
-    print(cell_path, '\n')
-
-    # show the directions being used to traverse path
-    directions = get_path_directions(target_cell_list)
-    print('num of directions: ', len(directions), '\n')
-    print(directions, '\n')
-
-    # show plots
-    get_visuals(target_cell_list, n)
-
-    return 0
+    converted_point_gdf = [current_location, target_location]
+    return converted_point_gdf
 
 
-# MAT SIZE
-N_SIZE = 30
+def initialize_map_and_plot(start_point, target_point):
+    global graph_nodes  # make available for A* Heuristic
+    """get graph walkable paths"""
+    bbox = bbox_generator()  # get bbox
+    # QUERY GRAPH ########################################################################
+    graph = ox.graph_from_bbox(*bbox,
+                               network_type='walk',
+                               retain_all=True,
+                               simplify=True)
+    # PROJECT GRAPH AND GET GDFS EDGES ###################################################
+    graph_projection = ox.project_graph(graph, to_crs='crs')  # project crs coordinates of nodes/edges on graph map
+    edges = ox.graph_to_gdfs(graph_projection, nodes=False)  # get connections; edges are the node connections
 
-# test array of targets cells
-test_cells_arr = np.array([(2, 0), (25, 5), (25, 10), (7, 23), (19, 29)], dtype=[('x', int), ('y', int)])
+    # FIND GEOMETRIES #####################################################################
+    """Find grass/parks, parking lots, bodies of water, and buildings"""
+    # Green area GeoDataFrame
+    tags1 = {'leisure': 'park', 'landuse': 'grass'}  # Key val pairs for parks and grass
+    green_area = ox.geometries_from_bbox(*bbox, tags1)  # gets park/grass nodes
 
-# cell paths generator
-# print(cell_paths_generator(cells_arr))
-# print(len(cell_paths_generator(cells_arr)))
+    # Parking/Parking Lot area GeoDataFrame
+    tags2 = {'parking': True, 'parking': 'surface'}
+    parking_area = ox.geometries_from_bbox(*bbox, tags2)  # get parking lot nodes
 
-# get figures
-get_visuals_and_directions(test_cells_arr, N_SIZE)
+    # Water area GeoDataFrame
+    tags3 = {'natural': 'water'}
+    water_area = ox.geometries_from_bbox(*bbox, tags3)  # get water nodes
+
+    # Building area GeoDataFrame
+    tags4 = {'building': True}
+    building_area = ox.geometries_from_bbox(*bbox, tags4)
+
+    # INPUTTING COORDINATES ###############################################################
+    """Input start and target destination"""
+    # current position of rover = start location, and user inputs target destination
+    # need to convert location points to geodataframes to be used for spatial operations
+
+    #conv_points = coordinate_input_and_point_conversion(zach_lat, zach_lon, kyle_lat, kyle_lon)
+    conv_points = coordinate_input_and_point_conversion(start_point[1], start_point[0], target_point[1], target_point[0])
+    # assign conv points to current and target location from returned list
+    current_location = conv_points[0]  # type : gdf
+    target_location = conv_points[1]  # type : gdf
+
+    # get graph (walkway) nodes
+    graph_nodes = ox.graph_to_gdfs(graph_projection, edges=False)
+    # get CRS from graph edges
+    CRS = edges.crs  # get crs of the edges
+    # Reproject the nodes on interest using the same crs (coordinate reference system)
+    graph_nodes.to_crs(CRS)
+    green_area.to_crs(CRS)
+    parking_area.to_crs(CRS)
+    current_location.to_crs(CRS)  # origin node
+    target_location.to_crs(CRS)  # destination node
+
+    # COMBINED GDF
+    #combined_gdf =
+
+    # TEST SHORTEST PATH #############################################################
+    # start and target nodes are conv_points[0] and [1]
+    # get the ID's of start and target node
+    print(current_location)
+    # start_id = graph.nodes[current_location]['osmid']
+    # target_id = graph.nodes[target_location]['osmid']
+
+    #graph.add_node(current_location.geometry)
+    # add nodes to the MultiDiGraph
+    # Store all nodes from the graph area without the edge nodes
+
+    # route nodes stored in GeoDatFrame
+    # route_nodes = gpd.GeoDataFrame() # IN USE
+    djikstra_route_nodes = gpd.GeoDataFrame()  # FOR DEMO
+    astar_route_nodes = gpd.GeoDataFrame()  # FOR DEMO
+    # the for loops iterate over the origin and destinations
+    for current_idx, current in current_location.iterrows():
+        # print('current_idx: ', current_idx, 'current: ', current)
+        # find closest node ID to location node
+        nearest_start_node = ox.nearest_nodes(G=graph_projection, X=current.geometry.x, Y=current.geometry.y)
+        # Extract coordinate info from destination node
+        for target_idx, target in target_location.iterrows():
+            # print('target_idx: ', target_idx, 'target: ', target)
+            # find closest node ID from target node
+            nearest_target_node = ox.nearest_nodes(G=graph_projection, X=target.geometry.x, Y=target.geometry.y)
+
+            # print(current['x'])
+            # print(nearest_start_node)
+            # print(graph_nodes.geometry[nearest_start_node])
+            # print('x1', graph_nodes.x[nearest_start_node])
+            # print('y1', graph_nodes.y[nearest_start_node])
+            # print('x2', graph_nodes.x[nearest_target_node])
+            # print('y2', graph_nodes.y[nearest_target_node])
+
+            print(nearest_start_node)
+            print(nearest_target_node)
+            print(graph_nodes.x[nearest_start_node])
+
+            # using networkx A* algo to get shortest path
+            # shortest_path = nx.astar_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+            #                               heuristic=euclidian_distance,
+            #                               weight='cost')
+
+            # using networkx djikstra algo to get shortest path
+            # shortest_path = nx.dijkstra_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+            #                               weight='length')
 
 
-###### INITIAL PARTIAL TESTING STARTS HERE #######
-# # making a matrix
-# MAT_WIDTH = 30
-# MAT_HEIGHT = 30
-# initialized_zero_matrix = np.zeros((MAT_WIDTH, MAT_HEIGHT), dtype=int)
-# # Node Coordinates (Nodes will be non zero values from 1 to n)
-# start_node_x = 2
-# start_node_y = 0
-# end_node_x = MAT_WIDTH - 1 - 10
-# end_node_y = MAT_HEIGHT - 1
-#
-# # will for loop for node placement, for now start and end are 1 and 2, intermediary nodes are 3, path cells are 4
-# initialized_zero_matrix[start_node_x][start_node_y] = 1
-# initialized_zero_matrix[end_node_x][end_node_y] = 2
-#
-# # bresenham line test
-# path_cells_arr = bresenham_line(start_node_x, start_node_y, end_node_x, end_node_y)
-# print(path_cells_arr)
-#
-# # nodes
-# # active_node_list = [(start_node_x, start_node_y), (end_node_x, end_node_y)] # convert to numpy list
-# # MAKE NODE LIST OF NUMPY TYPE IN ORDER TO USE INHERENT PYTHON SYNTAX
-# active_node_list = np.array([(start_node_x, start_node_y), (end_node_x, end_node_y)], dtype=[('x', int), ('y', int)])
-# print(active_node_list)
-#
-# # populating matrix with line path cells while avoiding start and end nodes
-# for cells in path_cells_arr:
-#     if cells not in active_node_list:
-#         initialized_zero_matrix[cells[0]][cells[1]] = 4
-#
-# # start_end_cells = np.array([target_cell_list[0], target_cell_list[-1]], dtype=[('x', int), ('y', int)]) # USE FOR FUNC
-#
-# ## OBSTACLE CREATION
-# # for i in range(5):
-# #     initialized_zero_matrix[9 + i][16] = 4
-#
-# # printing map
-# # print(initialized_zero_matrix)
-# visualizer(initialized_zero_matrix, MAT_WIDTH)
+            astar_shortest_path = nx.astar_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+                                          heuristic=euclidian_distance, weight='cost')
+
+            djikstra_shortest_path = nx.dijkstra_path(G=graph_projection, source=nearest_start_node, target=nearest_target_node,
+                                          weight='length')
+
+            # get only the nodes from the shortest path
+            #path_nodes = graph_nodes.loc[shortest_path]  # IN USE
+            astar_path_nodes = graph_nodes.loc[astar_shortest_path]  # FOR DEMO
+            djikstra_path_nodes = graph_nodes.loc[djikstra_shortest_path]  # FOR DEMO
+            # reformat path nodes into LineString object
+            #nodes_list = LineString(list(path_nodes.geometry.values))  # IN USE
+            astar_nodes_list = LineString(list(astar_path_nodes.geometry.values))  # IN DEMO
+            djikstra_nodes_list = LineString(list(djikstra_path_nodes.geometry.values))  # IN DEMO
+            # append LineString of path nodes into a GeoDataFrame
+            #route_nodes = route_nodes.append([[nodes_list]], ignore_index=True)  # has only LineString attribute IN USE!!
+            astar_route_nodes = astar_route_nodes.append([[astar_nodes_list]], ignore_index=True)  # FOR DEMO
+            djikstra_route_nodes = djikstra_route_nodes.append([[djikstra_nodes_list]], ignore_index=True)  # FOR DEMO
+
+    # Due to a bug GeoDataFrame gets converted to DataFrame
+    # print(route_nodes)
+    # print(type(route_nodes))  # DataFrame not GeoDataFrame
+
+    # Need to convert DataFrame back to GeoDataFrame !!!
+    # Give the output nodes column the geometry name to set the geometry
+    #route_nodes.columns = ['geometry']  # IN USE
+    astar_route_nodes.columns = ['geometry']  # FOR DEMO
+    djikstra_route_nodes.columns = ['geometry']  # FOR DEMO
+
+    # Set geometry of the nodes
+    # route_nodes = route_nodes.set_geometry('geometry')  # IN USE
+    # route_nodes.crs = graph_nodes.crs  # IN USE
+    astar_route_nodes = astar_route_nodes.set_geometry('geometry')  # IN USE
+    djikstra_route_nodes = djikstra_route_nodes.set_geometry('geometry')  # IN USE
+    astar_route_nodes.crs = graph_nodes.crs  # IN USE
+    djikstra_route_nodes.crs = graph_nodes.crs  # IN USE
+
+
+    # TURNING ROUTE INTO A LIST OF NODES ######################################################
+    astar_np_array = route_nodes_to_list(astar_path_nodes)
+    djikstra_np_array = route_nodes_to_list(djikstra_path_nodes)
+    print("num of nodes in asta: ", len(astar_np_array))
+    print("num of nodes in djikstra: ", len(djikstra_np_array))
+
+    # CONVERT LIST INTO DISTANCES
+    astar_distance = coordinates_to_distance(astar_np_array)
+    djikstra_distance = coordinates_to_distance(djikstra_np_array)
+
+    # FORMAT STRING FOR PLOT
+    astar_str = 'AStar Distance: {} km'.format(astar_distance)
+    djikstra_str = 'Djikstra Distance: {} km'.format(djikstra_distance)
+
+    # PLOTTING ############################################################################
+    # areas deemed legal for traversal
+    # Get plot of walkable pathways, green areas, and parking lots
+    plt.style.use('seaborn')
+    fig, ax = plt.subplots(figsize=(11, 11))
+    green_area.plot(ax=ax, color='green', alpha=0.5, zorder=0)
+    water_area.plot(ax=ax, color='blue', alpha=0.5, zorder=1)
+    building_area.plot(ax=ax, color='tan', zorder=2)
+    parking_area.plot(ax=ax, color='#4C4E52', zorder=3)
+    edges.plot(ax=ax, color='gray', linewidth=0.5, alpha=1, zorder=4)
+    current_location.plot(ax=ax, color='red', markersize=15, zorder=5)
+    target_location.plot(ax=ax, color='green', markersize=15, zorder=6)
+    # route_nodes.plot(ax=ax, color='red', linewidth=2, zorder=7)  # IN USE
+    # djikstra_route_nodes.plot(ax=ax, color='red', linewidth=2, zorder=7, label='Djikstra')  # FOR DEMO
+    # astar_route_nodes.plot(ax=ax, color='purple', linewidth=2, zorder=8, label='AStar')  # FOR DEMO
+    djikstra_route_nodes.plot(ax=ax, color='red', linewidth=2, zorder=7, label=djikstra_str)  # FOR DEMO
+    astar_route_nodes.plot(ax=ax, color='purple', linewidth=2, zorder=8, label=astar_str)  # FOR DEMO
+    plt.legend(loc="upper left")  # FOR DEMO
+    return ax
+
+
+# INPUTTING COORDINATES
+# Zach Lat / Long (START)
+zach_lat, zach_lon = 30.621289494918237, -96.34037747550609
+zach_point = (zach_lon, zach_lat)
+# Kyle Field Lat / Long (END)
+kyle_lat, kyle_lon = 30.61034118687136, -96.34009337550648
+kyle_point = (kyle_lon, kyle_lat)
+# Aggie Park
+agpark_lat, agpark_lon = 30.60994, -96.33688
+agpark_point = (agpark_lon, agpark_lat)
+# Parking Lot 51
+lot51_lat, lot51_lon = 30.62178, -96.33698
+lot51_point = (lot51_lon, lot51_lat)
+
+# RUN HERE
+start_point = zach_point
+target_point = lot51_point
+ax_general = initialize_map_and_plot(start_point, target_point)
+plt.show()
+
+
+
+
